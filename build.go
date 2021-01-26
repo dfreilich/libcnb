@@ -66,21 +66,23 @@ type BuildResult struct {
 	// PersistentMetadata is metadata that is persisted even across cache cleaning.
 	PersistentMetadata map[string]interface{}
 
-	// Plan is the buildpack plan contributed by the buildpack.
-	Plan *BuildpackPlan
-
 	// Processes are the process types contributed by the buildpack.
 	Processes []Process
 
 	// Slices are the application slices contributed by the buildpack.
 	Slices []Slice
+
+	// Unmet buildpack plan entries.
+	Unmet []UnmetPlanEntry
+
+	// BOM contains entries to be appended to the Bill of Materials.
+	BOM []BOMEntry
 }
 
 // NewBuildResult creates a new BuildResult instance, initializing empty fields.
 func NewBuildResult() BuildResult {
 	return BuildResult{
 		PersistentMetadata: make(map[string]interface{}),
-		Plan:               &BuildpackPlan{},
 	}
 }
 
@@ -90,8 +92,10 @@ func (b BuildResult) String() string {
 		l = append(l, reflect.TypeOf(c).Name())
 	}
 
-	return fmt.Sprintf("{Labels:%+v Layers:%s PersistentMetadata:%+v Plan:%+v Processes:%+v Slices:%+v}",
-		b.Labels, l, b.PersistentMetadata, b.Plan, b.PersistentMetadata, b.Slices)
+	return fmt.Sprintf(
+		"{BOM: %+v, Labels:%+v Layers:%s PersistentMetadata:%+v Processes:%+v Slices:%+v, Unmet:%+v}",
+		b.BOM, b.Labels, l, b.PersistentMetadata, b.PersistentMetadata, b.Slices, b.Unmet,
+	)
 }
 
 //go:generate mockery -name Builder -case=underscore
@@ -277,16 +281,42 @@ func Build(builder Builder, options ...Option) {
 		}
 	}
 
-	if len(result.Labels) > 0 || len(result.Processes) > 0 || len(result.Slices) > 0 {
-		launch := Launch{
-			Labels:    result.Labels,
-			Processes: result.Processes,
-			Slices:    result.Slices,
+	var launchBOM, buildBOM  []BOMEntry
+	for _, entry := range result.BOM {
+		if entry.Launch {
+			launchBOM = append(launchBOM, entry)
 		}
+		if entry.Build {
+			buildBOM = append(buildBOM, entry)
+		}
+	}
+
+	launch := LaunchTOML{
+		Labels:    result.Labels,
+		Processes: result.Processes,
+		Slices:    result.Slices,
+		BOM:       launchBOM,
+	}
+
+	if !launch.isEmpty() {
 		file = filepath.Join(ctx.Layers.Path, "launch.toml")
 		logger.Debugf("Writing application metadata: %s <= %+v", file, launch)
 		if err = config.tomlWriter.Write(file, launch); err != nil {
 			config.exitHandler.Error(fmt.Errorf("unable to write application metadata %s\n%w", file, err))
+			return
+		}
+	}
+
+	build := BuildTOML{
+		Unmet: result.Unmet,
+		BOM: buildBOM,
+	}
+
+	if !build.isEmpty() {
+		file = filepath.Join(ctx.Layers.Path, "build.toml")
+		logger.Debugf("Writing build metadata: %s <= %+v", file, build)
+		if err = config.tomlWriter.Write(file, build); err != nil {
+			config.exitHandler.Error(fmt.Errorf("unable to write build metadata %s\n%w", file, err))
 			return
 		}
 	}
@@ -299,15 +329,6 @@ func Build(builder Builder, options ...Option) {
 		logger.Debugf("Writing persistent metadata: %s <= %+v", file, store)
 		if err = config.tomlWriter.Write(file, store); err != nil {
 			config.exitHandler.Error(fmt.Errorf("unable to write persistent metadata %s\n%w", file, err))
-			return
-		}
-	}
-
-	if result.Plan != nil && len(result.Plan.Entries) > 0 {
-		file = config.arguments[3]
-		logger.Debugf("Writing buildpack plan: %s <= %+v", file, result.Plan)
-		if err = config.tomlWriter.Write(file, result.Plan); err != nil {
-			config.exitHandler.Error(fmt.Errorf("unable to write buildpack plan %s\n%w", file, err))
 			return
 		}
 	}

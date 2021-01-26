@@ -66,7 +66,7 @@ func testBuild(t *testing.T, context spec.G, it spec.S) {
 
 		Expect(ioutil.WriteFile(filepath.Join(buildpackPath, "buildpack.toml"),
 			[]byte(`
-api = "0.0.0"
+api = "0.0"
 
 [buildpack]
 id = "test-id"
@@ -194,21 +194,12 @@ test-key = "test-value"
 		ctx := builder.Calls[0].Arguments[0].(libcnb.BuildContext)
 		Expect(ctx.Application).To(Equal(libcnb.Application{Path: applicationPath}))
 		Expect(ctx.Buildpack).To(Equal(libcnb.Buildpack{
-			API: "0.0.0",
+			API: "0.0",
 			Info: libcnb.BuildpackInfo{
 				ID:               "test-id",
 				Name:             "test-name",
 				Version:          "1.1.1",
 				ClearEnvironment: true,
-			},
-			Orders: []libcnb.BuildpackOrder{
-				{Groups: []libcnb.BuildpackOrderBuildpack{
-					{
-						ID:       "test-id",
-						Version:  "2.2.2",
-						Optional: true,
-					},
-				}},
 			},
 			Path: buildpackPath,
 			Stacks: []libcnb.BuildpackStack{
@@ -384,7 +375,7 @@ test-key = "test-value"
 		Expect(layer.Metadata).To(Equal(map[string]interface{}{"test-key": "test-value"}))
 	})
 
-	it("writes application metadata", func() {
+	it("writes launch.toml", func() {
 		builder.On("Build", mock.Anything).Return(libcnb.BuildResult{
 			Labels: []libcnb.Label{
 				{
@@ -403,6 +394,17 @@ test-key = "test-value"
 					Paths: []string{"test-path"},
 				},
 			},
+			BOM: []libcnb.BOMEntry{
+				{
+					Name:     "test-launch-bom-entry",
+					Metadata: map[string]interface{}{"test-key": "test-value"},
+					Launch:   true,
+				},
+				{
+					Name:     "test-build-bom-entry",
+					Metadata: map[string]interface{}{"test-key": "test-value"},
+				},
+			},
 		}, nil)
 
 		libcnb.Build(builder,
@@ -411,7 +413,7 @@ test-key = "test-value"
 		)
 
 		Expect(tomlWriter.Calls[0].Arguments[0]).To(Equal(filepath.Join(layersPath, "launch.toml")))
-		Expect(tomlWriter.Calls[0].Arguments[1]).To(Equal(libcnb.Launch{
+		Expect(tomlWriter.Calls[0].Arguments[1]).To(Equal(libcnb.LaunchTOML{
 			Labels: []libcnb.Label{
 				{
 					Key:   "test-key",
@@ -427,6 +429,13 @@ test-key = "test-value"
 			Slices: []libcnb.Slice{
 				{
 					Paths: []string{"test-path"},
+				},
+			},
+			BOM: []libcnb.BOMEntry{
+				{
+					Name:     "test-launch-bom-entry",
+					Metadata: map[string]interface{}{"test-key": "test-value"},
+					Launch:   true,
 				},
 			},
 		}))
@@ -457,34 +466,6 @@ test-key = "test-value"
 		Expect(tomlWriter.Calls).To(HaveLen(0))
 	})
 
-	it("writes buildpack plan", func() {
-		builder.On("Build", mock.Anything).Return(libcnb.BuildResult{
-			Plan: &libcnb.BuildpackPlan{
-				Entries: []libcnb.BuildpackPlanEntry{
-					{
-						Name:     "test-name",
-						Metadata: map[string]interface{}{"test-key": "test-value"},
-					},
-				},
-			},
-		}, nil)
-
-		libcnb.Build(builder,
-			libcnb.WithArguments([]string{commandPath, layersPath, platformPath, buildpackPlanPath}),
-			libcnb.WithTOMLWriter(tomlWriter),
-		)
-
-		Expect(tomlWriter.Calls[0].Arguments[0]).To(Equal(buildpackPlanPath))
-		Expect(tomlWriter.Calls[0].Arguments[1]).To(Equal(&libcnb.BuildpackPlan{
-			Entries: []libcnb.BuildpackPlanEntry{
-				{
-					Name:     "test-name",
-					Metadata: map[string]interface{}{"test-key": "test-value"},
-				},
-			},
-		}))
-	})
-
 	it("removes stale layers", func() {
 		Expect(ioutil.WriteFile(filepath.Join(layersPath, "alpha.toml"), []byte(""), 0644)).To(Succeed())
 		Expect(ioutil.WriteFile(filepath.Join(layersPath, "bravo.toml"), []byte(""), 0644)).To(Succeed())
@@ -506,5 +487,48 @@ test-key = "test-value"
 		Expect(tomlWriter.Calls[0].Arguments[0]).To(Equal(filepath.Join(layersPath, "alpha.toml")))
 		Expect(filepath.Join(layersPath, "bravo.toml")).NotTo(BeARegularFile())
 		Expect(filepath.Join(layersPath, "store.toml")).To(BeARegularFile())
+	})
+
+	it("writes build.toml", func() {
+		builder.On("Build", mock.Anything).Return(libcnb.BuildResult{
+			BOM: []libcnb.BOMEntry{
+				{
+					Name:     "test-build-bom-entry",
+					Metadata: map[string]interface{}{"test-key": "test-value"},
+					Build:    true,
+				},
+				{
+					Name:     "test-launch-bom-entry",
+					Metadata: map[string]interface{}{"test-key": "test-value"},
+					Build:    false,
+				},
+			},
+			Unmet: []libcnb.UnmetPlanEntry{
+				{
+					Name: "test-entry",
+				},
+			},
+		}, nil)
+
+		libcnb.Build(builder,
+			libcnb.WithArguments([]string{commandPath, layersPath, platformPath, buildpackPlanPath}),
+			libcnb.WithTOMLWriter(tomlWriter),
+		)
+
+		Expect(tomlWriter.Calls[0].Arguments[0]).To(Equal(filepath.Join(layersPath, "build.toml")))
+		Expect(tomlWriter.Calls[0].Arguments[1]).To(Equal(libcnb.BuildTOML{
+			BOM: []libcnb.BOMEntry{
+				{
+					Name:     "test-build-bom-entry",
+					Metadata: map[string]interface{}{"test-key": "test-value"},
+					Build:    true,
+				},
+			},
+			Unmet: []libcnb.UnmetPlanEntry{
+				{
+					Name: "test-entry",
+				},
+			},
+		}))
 	})
 }

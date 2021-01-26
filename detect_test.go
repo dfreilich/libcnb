@@ -69,12 +69,6 @@ name = "test-name"
 version = "1.1.1"
 clear-env = true
 
-[[order]]
-[[order.group]]
-id = "test-id"
-version = "2.2.2"
-optional = true
-
 [[stacks]]
 id = "test-id"
 mixins = ["test-name"]
@@ -171,17 +165,6 @@ test-key = "test-value"
 				Name:             "test-name",
 				Version:          "1.1.1",
 				ClearEnvironment: true,
-			},
-			Orders: []libcnb.BuildpackOrder{
-				{
-					Groups: []libcnb.BuildpackOrderBuildpack{
-						{
-							ID:       "test-id",
-							Version:  "2.2.2",
-							Optional: true,
-						},
-					},
-				},
 			},
 			Path: buildpackPath,
 			Stacks: []libcnb.BuildpackStack{
