@@ -348,11 +348,13 @@ test-key = "test-value"
 
 	it("writes layer metadata", func() {
 		layer := libcnb.Layer{
-			Name:     "test-name",
-			Path:     filepath.Join(layersPath, "test-name"),
-			Build:    true,
-			Cache:    true,
-			Launch:   true,
+			Name: "test-name",
+			Path: filepath.Join(layersPath, "test-name"),
+			Types: libcnb.LayerTypes{
+				Build:  true,
+				Cache:  true,
+				Launch: true,
+			},
 			Metadata: map[string]interface{}{"test-key": "test-value"},
 		}
 		layerContributor.On("Contribute", mock.Anything).Return(layer, nil)
@@ -369,9 +371,9 @@ test-key = "test-value"
 
 		layer, ok := tomlWriter.Calls[0].Arguments[1].(libcnb.Layer)
 		Expect(ok).To(BeTrue())
-		Expect(layer.Build).To(BeTrue())
-		Expect(layer.Cache).To(BeTrue())
-		Expect(layer.Launch).To(BeTrue())
+		Expect(layer.Types.Build).To(BeTrue())
+		Expect(layer.Types.Cache).To(BeTrue())
+		Expect(layer.Types.Launch).To(BeTrue())
 		Expect(layer.Metadata).To(Equal(map[string]interface{}{"test-key": "test-value"}))
 	})
 
